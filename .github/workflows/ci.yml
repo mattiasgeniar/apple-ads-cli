@@ -23,12 +23,15 @@ jobs:
         # people `go install` is compiled by whatever they happen to have.
         go: ["1.26", "stable"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
+          # No dependencies means no go.sum, and setup-go warns on every run
+          # looking for one. Nothing to cache is the point of this repo.
+          cache: false
 
       - name: gofmt
         run: |
@@ -52,10 +55,13 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
+          # No dependencies means no go.sum, and setup-go warns on every run
+          # looking for one. Nothing to cache is the point of this repo.
+          cache: false
       # Installed rather than run through the action, because the action's
       # version and the config format have to agree: this repo uses the v2
       # config schema, and an action release that still defaults to v1 fails
@@ -78,10 +84,13 @@ jobs:
           - { goos: darwin, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
+          # No dependencies means no go.sum, and setup-go warns on every run
+          # looking for one. Nothing to cache is the point of this repo.
+          cache: false
       - name: Cross compile
         env:
           GOOS: ${{ matrix.goos }}
