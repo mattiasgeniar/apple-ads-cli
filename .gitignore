@@ -1,0 +1,5 @@
+/apple-ads-cli
+/dist/
+*.p8
+*.pem
+.env
