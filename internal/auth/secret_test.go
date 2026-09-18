@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -59,7 +60,7 @@ func TestClientSecretVerifiesAgainstThePublicKey(t *testing.T) {
 		t.Fatalf("ES256 signature must be 64 raw bytes, got %d (asn1 encoding is the usual cause and Apple rejects it)", len(sig))
 	}
 
-	digest := sha256Sum([]byte(parts[0] + "." + parts[1]))
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 
 	r := new(big.Int).SetBytes(sig[:32])
 	s := new(big.Int).SetBytes(sig[32:])
@@ -162,7 +163,7 @@ func TestParsePrivateKeyAcceptsBothOpensslEncodings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			if parsed.D.Cmp(key.D) != 0 {
+			if !parsed.Equal(key) {
 				t.Fatal("parsed a different key than was written")
 			}
 		})

@@ -15,6 +15,7 @@ package auth
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -109,7 +110,7 @@ func ClientSecret(creds Credentials, lifetime time.Duration) (string, error) {
 
 	signing := encode(header) + "." + encode(payload)
 
-	digest := sha256Sum([]byte(signing))
+	digest := sha256.Sum256([]byte(signing))
 
 	r, s, err := ecdsa.Sign(rand.Reader, creds.PrivateKey, digest[:])
 	if err != nil {

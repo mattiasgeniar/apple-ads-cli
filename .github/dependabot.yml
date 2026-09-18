@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Only the actions. There are no Go dependencies to update, and keeping it
+  # that way is a feature of this tool rather than an accident.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

@@ -1,5 +1,10 @@
 # apple-ads-cli
 
+[![CI](https://github.com/mattiasgeniar/apple-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mattiasgeniar/apple-ads-cli/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mattiasgeniar/apple-ads-cli.svg)](https://pkg.go.dev/github.com/mattiasgeniar/apple-ads-cli)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mattiasgeniar/apple-ads-cli)](https://goreportcard.com/report/github.com/mattiasgeniar/apple-ads-cli)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Drive the **Apple Ads Platform API 1.0** from a terminal. No dependencies, one
 static binary, JSON on stdout.
 
@@ -138,6 +143,31 @@ and a visible problem, not a panic.
 than silently truncating), campaign/ad-group/ad mutation, keyword management,
 and the search-term report.
 
+## Piping it somewhere
+
+The row shape is stable and boring on purpose, so the usual thing to do with it
+is pipe it straight into whatever holds your cost data:
+
+```sh
+apple-ads-cli report --from 2026-09-01 --to 2026-09-17 \
+  | your-importer --platform=apple
+```
+
+`jq` works on it directly too:
+
+```sh
+apple-ads-cli report --from 2026-09-01 --to 2026-09-17 \
+  | jq -r '.[] | [.date, .campaign_name, .ad_id, .spend_cents] | @tsv'
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports from anybody with a live
+Apple Ads account are especially welcome, for the reason in the section above.
+
+Security policy, and what this tool does with your private key, is in
+[SECURITY.md](SECURITY.md).
+
 ## Licence
 
-MIT.
+MIT. See [LICENSE](LICENSE).

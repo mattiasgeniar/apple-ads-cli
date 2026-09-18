@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -118,7 +119,7 @@ func TestGetReportsAppleErrorsWithAHintRatherThanJustInvalidClient(t *testing.T)
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	if !contains(err.Error(), "invalid_client") || !contains(err.Error(), "hint") {
+	if !strings.Contains(err.Error(), "invalid_client") || !strings.Contains(err.Error(), "hint") {
 		t.Errorf("error should carry Apple's body and a hint, got: %v", err)
 	}
 }
@@ -134,22 +135,19 @@ func TestGetRejectsASuccessfulResponseThatCarriesNoToken(t *testing.T) {
 	}
 }
 
-// The token URL is a package constant, so the test server is reached by
-// pointing the client's transport at it rather than by rewriting the URL.
 func sourceAgainst(t *testing.T, server *httptest.Server) *Source {
 	t.Helper()
 
 	return &Source{
-		Creds: testCreds(t),
-		Client: &http.Client{
-			Transport: rewrite{to: server.URL, inner: server.Client().Transport},
-		},
+		Creds:  testCreds(t),
+		Client: &http.Client{Transport: rewrite{to: server.URL}},
 	}
 }
 
+// The token URL is a package constant, so the only way to point the exchange at
+// a test server is to swap the transport under it.
 type rewrite struct {
-	to    string
-	inner http.RoundTripper
+	to string
 }
 
 func (r rewrite) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -160,16 +158,4 @@ func (r rewrite) RoundTrip(req *http.Request) (*http.Response, error) {
 	target.Header = req.Header
 
 	return http.DefaultTransport.RoundTrip(target)
-}
-
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (func() bool {
-		for i := 0; i+len(needle) <= len(haystack); i++ {
-			if haystack[i:i+len(needle)] == needle {
-				return true
-			}
-		}
-
-		return false
-	})()
 }

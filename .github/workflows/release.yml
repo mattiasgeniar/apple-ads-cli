@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Test before shipping anything
+        run: go test ./...
+
+      - name: Build every platform
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          version="${GITHUB_REF_NAME}"
+
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            name="apple-ads-cli_${version}_${goos}_${goarch}"
+
+            binary="dist/${name}/apple-ads-cli"
+            if [ "$goos" = "windows" ]; then binary="${binary}.exe"; fi
+
+            mkdir -p "dist/${name}"
+            GOOS="$goos" GOARCH="$goarch" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${version}" \
+              -o "$binary" .
+
+            cp README.md LICENSE "dist/${name}/"
+            tar -czf "dist/${name}.tar.gz" -C dist "${name}"
+            rm -rf "dist/${name}"
+          done
+
+          cd dist && sha256sum ./*.tar.gz > checksums.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/checksums.txt --generate-notes

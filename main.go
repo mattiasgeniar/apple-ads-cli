@@ -28,6 +28,14 @@ import (
 	"github.com/mattiasgeniar/apple-ads-cli/internal/report"
 )
 
+// version is stamped at build time by the release workflow:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags)"
+//
+// It stays "dev" for anything built from a working tree, which is exactly what
+// you want to see in a bug report from a binary somebody compiled themselves.
+var version = "dev"
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error: "+err.Error())
@@ -43,6 +51,10 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
+	case "version", "-v", "--version":
+		fmt.Println(version)
+
+		return nil
 	case "auth":
 		return authCommand(args[1:])
 	case "report":
@@ -62,7 +74,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `apple-ads-cli - Apple Ads Platform API 1.0 from the terminal
 
   auth check                     mint a token and prove the credentials work
-  report --from --to [--json]    spend per ad per day, on stdout
+  report --from --to             spend per ad per day, JSON on stdout
+  version                        print the version and exit
 
 Environment:
   APPLE_ADS_CLIENT_ID          from Apple Ads > Account Settings > API

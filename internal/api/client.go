@@ -119,7 +119,7 @@ func (c *Client) send(ctx context.Context, path string, payload []byte) (respons
 	if err != nil {
 		return response{}, fmt.Errorf("POST %s: %w", path, err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, 64<<20))
 	if err != nil {

@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose      # an unclosed response body leaks a connection per call
+    - errcheck
+    - errorlint      # %w, not %v, or errors.Is stops working
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - noctx          # every outbound request must carry a context
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - usetesting
+    - wastedassign
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+
+  exclusions:
+    rules:
+      # Test servers write responses whose errors nobody can act on, and the
+      # alternative is `_, _ =` on every line of every fake.
+      - path: _test\.go
+        linters: [errcheck, bodyclose, noctx]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
