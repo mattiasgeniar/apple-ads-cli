@@ -114,7 +114,7 @@ columns line up across platforms.
 
 Being honest about this, because it is a young tool:
 
-**Verified by tests** (`go test ./...`, 25 tests, no network):
+**Verified by tests** (`go test ./...`, 28 test functions and 44 cases, no network):
 
 - ES256 assertion signing, checked by verifying the signature against the public
   key, and the raw 64-byte `R||S` encoding.
