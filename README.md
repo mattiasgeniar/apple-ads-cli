@@ -48,8 +48,24 @@ openssl ecparam -genkey -name prime256v1 -noout -out private-key.pem
 openssl ec -in private-key.pem -pubout -out public-key.pem
 ```
 
-Paste `public-key.pem` into **Apple Ads → Account Settings → API**. Apple hands
-back a client id, a team id and a key id.
+Paste `public-key.pem` into **Account Settings → API**, here:
+
+**https://app-ads.apple.com/cm/app/settings/api**
+
+Two things that cost people an afternoon before they ever get that far:
+
+- **The API section only exists in Apple Ads _Advanced_.** `ads.apple.com` is the
+  marketing site and Basic has no API at all, so there is nothing to find there.
+  Apple's own walkthrough starts "choose Sign In > Advanced and log in as an
+  account administrator".
+- **Your user needs an API role.** An account admin grants it under
+  Account Settings → User Management → Invite Users, in the User Access and Role
+  section. Without it the API section does not appear even on Advanced.
+
+After you save, the three ids appear **as a code block above the public key
+field**, not on a separate screen. Note that `clientId` and `teamId` can
+legitimately be the same value — Apple's own sample has them identical — so if
+they match, that is not a copy-paste mistake.
 
 Everything is read from the environment, never from argv, so nothing secret
 lands in a shell history or in a `ps` listing:

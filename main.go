@@ -78,7 +78,8 @@ func usage() {
   version                        print the version and exit
 
 Environment:
-  APPLE_ADS_CLIENT_ID          from Apple Ads > Account Settings > API
+  APPLE_ADS_CLIENT_ID          Account Settings > API, on Apple Ads *Advanced*
+                               https://app-ads.apple.com/cm/app/settings/api
   APPLE_ADS_TEAM_ID            the same screen; not the same as the client id
   APPLE_ADS_KEY_ID             the id of the uploaded public key
   APPLE_ADS_AD_ACCOUNT_ID      scopes every request
