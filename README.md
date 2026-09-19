@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/mattiasgeniar/apple-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mattiasgeniar/apple-ads-cli/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mattiasgeniar/apple-ads-cli.svg)](https://pkg.go.dev/github.com/mattiasgeniar/apple-ads-cli)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mattiasgeniar/apple-ads-cli)](https://goreportcard.com/report/github.com/mattiasgeniar/apple-ads-cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Drive the **Apple Ads Platform API 1.0** from a terminal. No dependencies, one
