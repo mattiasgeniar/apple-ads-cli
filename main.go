@@ -59,6 +59,8 @@ func run(args []string) error {
 		return authCommand(args[1:])
 	case "report":
 		return reportCommand(args[1:])
+	case "campaigns":
+		return campaignsCommand()
 	case "help", "-h", "--help":
 		usage()
 
@@ -75,11 +77,12 @@ func usage() {
 
   auth check                     mint a token and prove the credentials work
   report --from --to             spend per ad per day, JSON on stdout
+  campaigns                      every campaign with its status and budget
   version                        print the version and exit
 
 Environment:
-  APPLE_ADS_CLIENT_ID          Account Settings > API, on Apple Ads *Advanced*
-                               https://app-ads.apple.com/cm/app/settings/api
+  APPLE_ADS_CLIENT_ID          Account Settings > API, signed in as a user with
+                               an API role (Apple Ads Advanced)
   APPLE_ADS_TEAM_ID            the same screen; not the same as the client id
   APPLE_ADS_KEY_ID             the id of the uploaded public key
   APPLE_ADS_AD_ACCOUNT_ID      scopes every request
@@ -194,38 +197,169 @@ func reportCommand(args []string) error {
 	return encoder.Encode(rows)
 }
 
-// Spend pulls one page of ad-level daily spend.
+// Spend pulls ad-level daily spend for every app campaign in the account.
+//
+// Platform API 1.0 refuses an ads report without a campaignId filter, so this
+// lists the campaigns first and asks for one report per campaign. The
+// campaign list is also the only place the campaign's name comes from: ad
+// metadata carries the id but not the name.
 //
 // Exported so the end-to-end test can drive it against a fake Apple without
 // going through argv and the environment.
 func Spend(ctx context.Context, client *api.Client, from, to, timeZone string) ([]report.Row, error) {
-	body := map[string]any{
-		"timeRange": map[string]string{
-			"start":       from,
-			"end":         to,
-			"timeZone":    timeZone,
-			"granularity": "DAILY",
-		},
-		// Apple caps a page at 5000. Asking for the cap keeps the common case
-		// to one request; anything larger needs the pagination loop this does
-		// not yet have, and the count below says so out loud rather than
-		// silently reporting a truncated month.
-		"pagination": map[string]int{"offset": 0, "limit": 5000},
+	var campaigns struct {
+		Result []struct {
+			ID                 json.Number `json:"id"`
+			Name               string      `json:"name"`
+			PromotedObjectType string      `json:"promotedObjectType"`
+		} `json:"result"`
 	}
 
-	var raw json.RawMessage
-	if err := client.Post(ctx, "/reports/apps/ads/query", body, &raw); err != nil {
+	listing := map[string]any{"pagination": map[string]int{"offset": 0, "pageSize": 1000}}
+	if err := client.Post(ctx, "/campaigns/query", listing, &campaigns); err != nil {
 		return nil, err
 	}
 
-	rows, err := report.Rows(raw)
-	if err != nil {
-		return nil, err
+	timeRange := map[string]string{"start": from, "end": to, "timeZone": timeZone}
+
+	// Apple rejects a granularity on a one-day range and answers with
+	// totalMetrics only, so a single day is asked for without one.
+	singleDay := ""
+	if from == to {
+		singleDay = from
+	} else {
+		timeRange["granularity"] = "DAILY"
 	}
 
-	if len(rows) >= 5000 {
-		return rows, errors.New("hit the 5000-row page limit: narrow the date range, this tool does not paginate yet")
+	rows := []report.Row{}
+	trace := os.Getenv("APPLE_ADS_DEBUG") != ""
+
+	for _, campaign := range campaigns.Result {
+		// Brand campaigns on Apple Maps answer on a different report path
+		// and are not something this account runs. App campaigns come back
+		// as APPSTORE_APP, which is not the APPS the reports are filed under.
+		if campaign.PromotedObjectType == "BUSINESS_BRAND" {
+			continue
+		}
+
+		body := map[string]any{
+			"timeRange": timeRange,
+			"filters": []map[string]string{
+				{"field": "campaignId", "operator": "EQUALS", "value": campaign.ID.String()},
+			},
+			"pagination": map[string]int{"offset": 0, "pageSize": 1000},
+		}
+
+		var raw json.RawMessage
+		if err := client.Post(ctx, "/reports/apps/ads/query", body, &raw); err != nil {
+			return nil, err
+		}
+
+		// The response shapes here come from Apple's documentation. Seeing
+		// the raw answer is the quickest way to tell "no spend" from "a
+		// field was renamed", which both look like an empty list.
+		if trace {
+			fmt.Fprintf(os.Stderr, "campaign %s (%s): %s\n", campaign.ID, campaign.Name, raw)
+		}
+
+		page, err := report.Rows(raw, campaign.Name, singleDay)
+		if err != nil {
+			return nil, err
+		}
+
+		rows = append(rows, page...)
 	}
 
 	return rows, nil
+}
+
+// Campaign is the slice of Apple's campaign object worth watching: whether it
+// is serving, why not, and what it may spend.
+type Campaign struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Status         string   `json:"status"`
+	SystemStatus   string   `json:"system_status"`
+	LimitedBy      []string `json:"limited_by"`
+	DailyBudget    string   `json:"daily_budget"`
+	Currency       string   `json:"currency"`
+	StartTime      string   `json:"start_time"`
+	EndTime        string   `json:"end_time"`
+	PromotedObject string   `json:"promoted_object"`
+}
+
+// Campaigns lists every campaign in the ad account.
+//
+// A report only has rows for what was spent, so a campaign that is running
+// and buying nothing is invisible in it. This is where that campaign shows up.
+func Campaigns(ctx context.Context, client *api.Client) ([]Campaign, error) {
+	var listing struct {
+		Result []struct {
+			ID                          json.Number `json:"id"`
+			Name                        string      `json:"name"`
+			Status                      string      `json:"status"`
+			SystemStatus                string      `json:"systemStatus"`
+			SystemStatusLimitingReasons []string    `json:"systemStatusLimitingReasons"`
+			StartTime                   string      `json:"startTime"`
+			EndTime                     string      `json:"endTime"`
+			PromotedObjectType          string      `json:"promotedObjectType"`
+			DailyBudget                 struct {
+				Value report.Money `json:"value"`
+			} `json:"dailyBudget"`
+		} `json:"result"`
+	}
+
+	body := map[string]any{"pagination": map[string]int{"offset": 0, "pageSize": 1000}}
+	if err := client.Post(ctx, "/campaigns/query", body, &listing); err != nil {
+		return nil, err
+	}
+
+	campaigns := []Campaign{}
+
+	for _, c := range listing.Result {
+		limited := c.SystemStatusLimitingReasons
+		if limited == nil {
+			limited = []string{}
+		}
+
+		campaigns = append(campaigns, Campaign{
+			ID:             c.ID.String(),
+			Name:           c.Name,
+			Status:         c.Status,
+			SystemStatus:   c.SystemStatus,
+			LimitedBy:      limited,
+			DailyBudget:    c.DailyBudget.Value.Amount,
+			Currency:       c.DailyBudget.Value.Currency,
+			StartTime:      c.StartTime,
+			EndTime:        c.EndTime,
+			PromotedObject: c.PromotedObjectType,
+		})
+	}
+
+	return campaigns, nil
+}
+
+func campaignsCommand() error {
+	creds, account, err := credentials()
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	client := &api.Client{
+		AdAccountID: account,
+		Tokens:      &auth.Source{Creds: creds},
+	}
+
+	campaigns, err := Campaigns(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(campaigns)
 }

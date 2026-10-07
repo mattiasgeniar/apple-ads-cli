@@ -89,40 +89,54 @@ func (m Money) Cents() (int64, error) {
 	return total, nil
 }
 
-// appleResponse is the envelope Apple wraps every report in.
+// appleResponse is the envelope Apple wraps an ads report in, in Platform API
+// 1.0: one row per ad under result.rows, the days under granularMetrics, and
+// the whole range summed under totalMetrics.
 //
-// Decoded leniently on purpose. This tool has been written against Apple's
-// published documentation rather than against a live account, so a field that
-// turns out to be named slightly differently should produce a row with a zero
-// in it and a visible problem, not a panic. See the README.
+// Decoded leniently on purpose. A field that turns out to be named slightly
+// differently should produce a row with a zero in it and a visible problem,
+// not a panic.
 type appleResponse struct {
-	Data struct {
-		ReportingDataResponse struct {
-			Row []struct {
-				Metadata struct {
-					CampaignID   json.Number `json:"campaignId"`
-					CampaignName string      `json:"campaignName"`
-					AdGroupID    json.Number `json:"adGroupId"`
-					AdID         json.Number `json:"adId"`
-					AdName       string      `json:"adName"`
-				} `json:"metadata"`
-				Granularity []struct {
-					Date        string `json:"date"`
-					Impressions int64  `json:"impressions"`
-					Taps        int64  `json:"taps"`
-					Installs    int64  `json:"installs"`
-					LocalSpend  Money  `json:"localSpend"`
-				} `json:"granularity"`
-			} `json:"row"`
-		} `json:"reportingDataResponse"`
-	} `json:"data"`
+	Result struct {
+		Rows []struct {
+			Metadata struct {
+				ID         json.Number `json:"id"`
+				Name       string      `json:"name"`
+				CampaignID json.Number `json:"campaignId"`
+				AdGroupID  json.Number `json:"adGroupId"`
+			} `json:"metadata"`
+			TotalMetrics    metrics   `json:"totalMetrics"`
+			GranularMetrics []metrics `json:"granularMetrics"`
+		} `json:"rows"`
+	} `json:"result"`
+}
+
+type metrics struct {
+	Date          string `json:"date"`
+	Impressions   int64  `json:"impressions"`
+	Taps          int64  `json:"taps"`
+	TapInstalls   int64  `json:"tapInstalls"`
+	TotalInstalls int64  `json:"totalInstalls"`
+	LocalSpend    Money  `json:"localSpend"`
+}
+
+// installs prefers Apple's total, which counts view-through installs too, and
+// falls back to tap-through installs, which is all the daily breakdown carries.
+func (m metrics) installs() int64 {
+	if m.TotalInstalls > 0 {
+		return m.TotalInstalls
+	}
+
+	return m.TapInstalls
 }
 
 // Rows flattens Apple's nested response into one row per ad per day.
 //
-// Apple nests the days inside the ad; this family of tools is flat, because a
-// flat row is what a database wants and what a diff of two days is readable in.
-func Rows(payload []byte) ([]Row, error) {
+// Apple's ad metadata carries no campaign name, so the caller passes the one
+// it read from the campaign list. singleDay is the date to stamp on rows when
+// the request covered one day: Apple then returns totalMetrics only, because
+// a granularity is not allowed on a one-day range.
+func Rows(payload []byte, campaignName, singleDay string) ([]Row, error) {
 	var decoded appleResponse
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return nil, fmt.Errorf("decode report: %w", err)
@@ -130,8 +144,15 @@ func Rows(payload []byte) ([]Row, error) {
 
 	rows := []Row{}
 
-	for _, entry := range decoded.Data.ReportingDataResponse.Row {
-		for _, day := range entry.Granularity {
+	for _, entry := range decoded.Result.Rows {
+		days := entry.GranularMetrics
+		if len(days) == 0 && singleDay != "" {
+			total := entry.TotalMetrics
+			total.Date = singleDay
+			days = []metrics{total}
+		}
+
+		for _, day := range days {
 			cents, err := day.LocalSpend.Cents()
 			if err != nil {
 				return nil, err
@@ -148,10 +169,10 @@ func Rows(payload []byte) ([]Row, error) {
 				Platform:     "apple",
 				Date:         day.Date,
 				CampaignID:   entry.Metadata.CampaignID.String(),
-				CampaignName: entry.Metadata.CampaignName,
+				CampaignName: campaignName,
 				AdGroupID:    entry.Metadata.AdGroupID.String(),
-				AdID:         entry.Metadata.AdID.String(),
-				AdName:       entry.Metadata.AdName,
+				AdID:         entry.Metadata.ID.String(),
+				AdName:       entry.Metadata.Name,
 				SpendCents:   cents,
 				Currency:     strings.ToUpper(day.LocalSpend.Currency),
 				Impressions:  day.Impressions,
@@ -160,7 +181,7 @@ func Rows(payload []byte) ([]Row, error) {
 				// click. Same event, different word, and the column it lands
 				// in is called clicks everywhere else.
 				Clicks:      day.Taps,
-				Conversions: day.Installs,
+				Conversions: day.installs(),
 			})
 		}
 	}

@@ -49,7 +49,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 
 Paste `public-key.pem` into **Account Settings → API**, here:
 
-**https://app-ads.apple.com/cm/app/settings/api**
+**Account Settings → API** (`https://ui.ads.apple.com/<ad account id>/settings/apicertificates`)
 
 Two things that cost people an afternoon before they ever get that far:
 
@@ -148,15 +148,19 @@ Being honest about this, because it is a young tool:
   700 cents.
 - 64-bit ids survive as strings rather than losing precision through float64.
 
-**Not verified against a live Apple account.** I do not have credentials yet.
-The request and response shapes come from Apple's published documentation, so
-treat the field names in `internal/report/spend.go` as the most likely thing to
-be wrong. The decoder is deliberately lenient: a renamed field gives you a zero
-and a visible problem, not a panic.
+**Verified against a live account** (October 2026): the token exchange, the
+campaign list, and the ads report request. Two things the documentation does
+not say and the live API does: an ads report is refused without a
+`campaignId` filter, so the tool lists campaigns first and asks once per
+campaign, and app campaigns come back as `APPSTORE_APP`. What has not been
+seen live yet is a report with spend in it, so the metric field names in
+`internal/report/spend.go` are still the documentation's. The decoder is
+deliberately lenient: a renamed field gives you a zero and a visible problem,
+not a panic. `APPLE_ADS_DEBUG=1` prints every raw report to stderr, which is
+the quickest way to tell "no spend" from "a field was renamed".
 
-**Not built yet:** pagination past Apple's 5000-row page (the tool errors rather
-than silently truncating), campaign/ad-group/ad mutation, keyword management,
-and the search-term report.
+**Not built yet:** pagination past 1000 ads in one campaign, campaign/ad-group/ad
+mutation, keyword management, and the search-term report.
 
 ## Piping it somewhere
 
