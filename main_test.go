@@ -121,3 +121,40 @@ func TestSpendPrintsRowsInTheAgreedShape(t *testing.T) {
 		}
 	}
 }
+
+// A campaign that is running and buying nothing has no rows in a report, so
+// the campaign list is the only place it can be seen. Its budget comes back
+// as Apple's decimal string and stays one.
+func TestCampaignsKeepsTheOnesThatSpentNothing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/campaigns/query" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+
+		_, _ = w.Write([]byte(`{"result": [
+          {"id": 2144824635, "name": "NL · Generic · exact", "status": "ENABLED", "systemStatus": "RUNNING",
+           "systemStatusLimitingReasons": [], "dailyBudget": {"value": {"amount": "10", "currency": "EUR"}},
+           "promotedObjectType": "APPSTORE_APP"},
+          {"id": 2144824388, "name": "NL · Competitors · exact", "status": "ENABLED", "systemStatus": "ON_HOLD",
+           "systemStatusLimitingReasons": ["BUDGET_EXHAUSTED"], "dailyBudget": {"value": {"amount": "5", "currency": "EUR"}}}
+        ]}`))
+	}))
+	defer server.Close()
+
+	client := &api.Client{AdAccountID: "1", Tokens: token("tok"), BaseURL: server.URL, HTTP: server.Client()}
+
+	campaigns, err := Campaigns(context.Background(), client)
+	if err != nil {
+		t.Fatalf("campaigns: %v", err)
+	}
+
+	if len(campaigns) != 2 {
+		t.Fatalf("got %d campaigns, want 2", len(campaigns))
+	}
+	if campaigns[0].ID != "2144824635" || campaigns[0].DailyBudget != "10" {
+		t.Errorf("first = %+v", campaigns[0])
+	}
+	if campaigns[1].SystemStatus != "ON_HOLD" || len(campaigns[1].LimitedBy) != 1 {
+		t.Errorf("second = %+v", campaigns[1])
+	}
+}

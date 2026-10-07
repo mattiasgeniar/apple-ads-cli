@@ -49,7 +49,7 @@ openssl ec -in private-key.pem -pubout -out public-key.pem
 
 Paste `public-key.pem` into **Account Settings → API**, here:
 
-**https://app-ads.apple.com/cm/app/settings/api**
+**Account Settings → API** (`https://ui.ads.apple.com/<ad account id>/settings/apicertificates`)
 
 Two things that cost people an afternoon before they ever get that far:
 

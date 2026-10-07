@@ -59,6 +59,8 @@ func run(args []string) error {
 		return authCommand(args[1:])
 	case "report":
 		return reportCommand(args[1:])
+	case "campaigns":
+		return campaignsCommand()
 	case "help", "-h", "--help":
 		usage()
 
@@ -75,11 +77,12 @@ func usage() {
 
   auth check                     mint a token and prove the credentials work
   report --from --to             spend per ad per day, JSON on stdout
+  campaigns                      every campaign with its status and budget
   version                        print the version and exit
 
 Environment:
-  APPLE_ADS_CLIENT_ID          Account Settings > API, on Apple Ads *Advanced*
-                               https://app-ads.apple.com/cm/app/settings/api
+  APPLE_ADS_CLIENT_ID          Account Settings > API, signed in as a user with
+                               an API role (Apple Ads Advanced)
   APPLE_ADS_TEAM_ID            the same screen; not the same as the client id
   APPLE_ADS_KEY_ID             the id of the uploaded public key
   APPLE_ADS_AD_ACCOUNT_ID      scopes every request
@@ -268,4 +271,95 @@ func Spend(ctx context.Context, client *api.Client, from, to, timeZone string) (
 	}
 
 	return rows, nil
+}
+
+// Campaign is the slice of Apple's campaign object worth watching: whether it
+// is serving, why not, and what it may spend.
+type Campaign struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Status         string   `json:"status"`
+	SystemStatus   string   `json:"system_status"`
+	LimitedBy      []string `json:"limited_by"`
+	DailyBudget    string   `json:"daily_budget"`
+	Currency       string   `json:"currency"`
+	StartTime      string   `json:"start_time"`
+	EndTime        string   `json:"end_time"`
+	PromotedObject string   `json:"promoted_object"`
+}
+
+// Campaigns lists every campaign in the ad account.
+//
+// A report only has rows for what was spent, so a campaign that is running
+// and buying nothing is invisible in it. This is where that campaign shows up.
+func Campaigns(ctx context.Context, client *api.Client) ([]Campaign, error) {
+	var listing struct {
+		Result []struct {
+			ID                          json.Number `json:"id"`
+			Name                        string      `json:"name"`
+			Status                      string      `json:"status"`
+			SystemStatus                string      `json:"systemStatus"`
+			SystemStatusLimitingReasons []string    `json:"systemStatusLimitingReasons"`
+			StartTime                   string      `json:"startTime"`
+			EndTime                     string      `json:"endTime"`
+			PromotedObjectType          string      `json:"promotedObjectType"`
+			DailyBudget                 struct {
+				Value report.Money `json:"value"`
+			} `json:"dailyBudget"`
+		} `json:"result"`
+	}
+
+	body := map[string]any{"pagination": map[string]int{"offset": 0, "pageSize": 1000}}
+	if err := client.Post(ctx, "/campaigns/query", body, &listing); err != nil {
+		return nil, err
+	}
+
+	campaigns := []Campaign{}
+
+	for _, c := range listing.Result {
+		limited := c.SystemStatusLimitingReasons
+		if limited == nil {
+			limited = []string{}
+		}
+
+		campaigns = append(campaigns, Campaign{
+			ID:             c.ID.String(),
+			Name:           c.Name,
+			Status:         c.Status,
+			SystemStatus:   c.SystemStatus,
+			LimitedBy:      limited,
+			DailyBudget:    c.DailyBudget.Value.Amount,
+			Currency:       c.DailyBudget.Value.Currency,
+			StartTime:      c.StartTime,
+			EndTime:        c.EndTime,
+			PromotedObject: c.PromotedObjectType,
+		})
+	}
+
+	return campaigns, nil
+}
+
+func campaignsCommand() error {
+	creds, account, err := credentials()
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	client := &api.Client{
+		AdAccountID: account,
+		Tokens:      &auth.Source{Creds: creds},
+	}
+
+	campaigns, err := Campaigns(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(campaigns)
 }
