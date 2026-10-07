@@ -58,16 +58,16 @@ func TestCentsRefusesSomethingThatIsNotANumber(t *testing.T) {
 
 func TestRowsFlattensOneRowPerAdPerDay(t *testing.T) {
 	rows, err := Rows([]byte(`{
-      "data": {"reportingDataResponse": {"row": [
+      "result": {"rows": [
         {
-          "metadata": {"campaignId": 111, "campaignName": "brand", "adGroupId": 222, "adId": 333, "adName": "hero"},
-          "granularity": [
-            {"date": "2026-09-16", "impressions": 100, "taps": 10, "installs": 2, "localSpend": {"amount": "12.55", "currency": "eur"}},
-            {"date": "2026-09-17", "impressions": 200, "taps": 20, "installs": 4, "localSpend": {"amount": "25.10", "currency": "eur"}}
+          "metadata": {"id": 333, "name": "hero", "campaignId": 111, "adGroupId": 222},
+          "granularMetrics": [
+            {"date": "2026-09-16", "impressions": 100, "taps": 10, "tapInstalls": 2, "localSpend": {"amount": "12.55", "currency": "eur"}},
+            {"date": "2026-09-17", "impressions": 200, "taps": 20, "tapInstalls": 4, "localSpend": {"amount": "25.10", "currency": "eur"}}
           ]
         }
-      ]}}
-    }`))
+      ]}
+    }`), "brand", "")
 	if err != nil {
 		t.Fatalf("rows: %v", err)
 	}
@@ -101,16 +101,16 @@ func TestRowsFlattensOneRowPerAdPerDay(t *testing.T) {
 // empty ones puts zero-spend rows in a cost table for no reason.
 func TestRowsDropsDaysWhereNothingHappened(t *testing.T) {
 	rows, err := Rows([]byte(`{
-      "data": {"reportingDataResponse": {"row": [
+      "result": {"rows": [
         {
-          "metadata": {"campaignId": 1, "adId": 2},
-          "granularity": [
-            {"date": "2026-09-16", "impressions": 0, "taps": 0, "installs": 0, "localSpend": {"amount": "0", "currency": "EUR"}},
-            {"date": "2026-09-17", "impressions": 5, "taps": 1, "installs": 0, "localSpend": {"amount": "1.00", "currency": "EUR"}}
+          "metadata": {"id": 2, "campaignId": 1},
+          "granularMetrics": [
+            {"date": "2026-09-16", "impressions": 0, "taps": 0, "tapInstalls": 0, "localSpend": {"amount": "0", "currency": "EUR"}},
+            {"date": "2026-09-17", "impressions": 5, "taps": 1, "tapInstalls": 0, "localSpend": {"amount": "1.00", "currency": "EUR"}}
           ]
         }
-      ]}}
-    }`))
+      ]}
+    }`), "", "")
 	if err != nil {
 		t.Fatalf("rows: %v", err)
 	}
@@ -128,13 +128,13 @@ func TestRowsDropsDaysWhereNothingHappened(t *testing.T) {
 // float64, which is what encoding/json uses for a bare number.
 func TestRowsKeepsLargeIdsExact(t *testing.T) {
 	rows, err := Rows([]byte(`{
-      "data": {"reportingDataResponse": {"row": [
+      "result": {"rows": [
         {
-          "metadata": {"campaignId": 9007199254740993, "adId": 9007199254740995},
-          "granularity": [{"date": "2026-09-17", "impressions": 1, "taps": 1, "installs": 0, "localSpend": {"amount": "1.00", "currency": "EUR"}}]
+          "metadata": {"id": 9007199254740995, "campaignId": 9007199254740993},
+          "granularMetrics": [{"date": "2026-09-17", "impressions": 1, "taps": 1, "tapInstalls": 0, "localSpend": {"amount": "1.00", "currency": "EUR"}}]
         }
-      ]}}
-    }`))
+      ]}
+    }`), "", "")
 	if err != nil {
 		t.Fatalf("rows: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestRowsKeepsLargeIdsExact(t *testing.T) {
 }
 
 func TestRowsIsEmptyRatherThanNullWhenAppleSendsNothing(t *testing.T) {
-	rows, err := Rows([]byte(`{"data": {"reportingDataResponse": {"row": []}}}`))
+	rows, err := Rows([]byte(`{"result": {}, "pagination": {"offset": 0, "pageSize": 0, "totalCount": 0}}`), "", "")
 	if err != nil {
 		t.Fatalf("rows: %v", err)
 	}
@@ -166,7 +166,30 @@ func TestRowsIsEmptyRatherThanNullWhenAppleSendsNothing(t *testing.T) {
 }
 
 func TestRowsRefusesGarbage(t *testing.T) {
-	if _, err := Rows([]byte(`not json`)); err == nil {
+	if _, err := Rows([]byte(`not json`), "", ""); err == nil {
 		t.Fatal("want an error")
+	}
+}
+
+// A one-day range may not carry a granularity, so Apple answers it with
+// totalMetrics alone and no dates. The day the caller asked for is stamped on.
+func TestRowsUsesTheTotalForASingleDay(t *testing.T) {
+	rows, err := Rows([]byte(`{
+      "result": {"rows": [
+        {
+          "metadata": {"id": 5, "campaignId": 4},
+          "totalMetrics": {"impressions": 40, "taps": 3, "tapInstalls": 1, "totalInstalls": 2, "localSpend": {"amount": "2.10", "currency": "EUR"}}
+        }
+      ]}
+    }`), "generic", "2026-10-06")
+	if err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Date != "2026-10-06" || rows[0].SpendCents != 210 || rows[0].Conversions != 2 {
+		t.Errorf("row = %+v", rows[0])
 	}
 }
